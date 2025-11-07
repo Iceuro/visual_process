@@ -25,7 +25,7 @@ def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
     返回:
         np.ndarray: shape 为 (frame_num, height, width, 3)
     """
-    # 这里可以看到420p10le的每一帧的大小是分辨率的1.5×2倍，422是2×2倍
+    # 这里可以看到420p10le的每一帧的大小是分辨率的3(1.5×2)倍，422是4(2×2)倍
     if yuv_type == 'yuv422p10le':
         y_len = width * height
         uv_len = (width // 2) * height
@@ -59,7 +59,6 @@ def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
             if yuv_type == 'yuv422p10le':
                 u = data[y_len:y_len + uv_len].reshape((height, width // 2))
                 v = data[y_len + uv_len:].reshape((height, width // 2))
-
             elif yuv_type == 'yuv420p10le':
                 u = data[y_len:y_len + uv_len].reshape((height // 2, width // 2))
                 v = data[y_len + uv_len:].reshape((height // 2, width // 2))
@@ -107,6 +106,8 @@ def ycbcr2rgb(ycbcr, color_space='bt2020'):
 
 def yuv_norm(yuv, yuv_range='limited'):
     y, u, v = cv2.split(yuv)
+
+    # yuv一般都是limited range的
     if yuv_range == 'limited' or yuv_range == 'tv':
         y = (y - 64) / (940 - 64)
         cb = (u - 512) / (960 - 64)
@@ -122,6 +123,14 @@ def yuv_norm(yuv, yuv_range='limited'):
 
 
 def load_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_num=None):
+    """
+    :param yuv_path: yuv文件的路径
+    :param yuv_type: yuv的类型，一般都是yuv420p10le，少数是yuv422p10le的类型
+    :param width: 视频的宽度
+    :param height: 视频的高度
+    :param frame_num: 提取前多少帧，为None提取全部
+    :return: 已经转换为rgb的list
+    """
     yuv_list = read_yuv(yuv_path, yuv_type=yuv_type,
                         width=width, height=height, frame_num=frame_num)
     rgb_list = [yuv2rgb_bt2020(yuv) for yuv in yuv_list]
@@ -149,6 +158,10 @@ def rgb2ycbcr(rgb, color_space='bt2020'):
 
 def rgb2gray_bt2020(rgb):
     return 0.2627 * rgb[..., 0] + 0.6780 * rgb[..., 1] + 0.0593 * rgb[..., 2]
+
+
+def rgb2gray_bt709(rgb):
+    return 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
 
 
 def load_img(img_path):

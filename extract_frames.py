@@ -26,7 +26,8 @@ def get_video_info(video_path):
 def extract_frames(video_path, output_dir='',
                    seg_num=3, frame_nums=10, all_frames=False):
     """
-    从视频中提取分段的帧
+    Extract frames(.png) from video(.mp4)
+    从视频中提取图片帧
     :param video_path: 视频的路径
     :param output_dir: 提取的帧输出的文件夹
     :param seg_num: 分成的段数
@@ -90,3 +91,38 @@ def extract_frames(video_path, output_dir='',
         ]
 
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def video2yuv(video_path, output_dir='convert_video_out'):
+    """
+    Convert video to YUV files
+    将视频转换为YUV文件
+    :param video_path: 输入视频路径
+    :param out_dir: 输出文件夹路径
+    :return:
+    """
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    infos = get_video_info(video_path)['streams'][0]
+    pix_fmt = infos['pix_fmt']
+    color_primaries = infos.get('color_primaries', 'bt2020')
+    colorspace = infos.get('color_primaries', 'bt2020nc')
+    color_trc = infos.get('color_primaries', 'smpte2084')
+
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+    yuv_path = os.path.join(output_dir, f"{base_name}.yuv")
+
+    cmd_ffmpeg = [
+        "ffmpeg", "-i", video_path,
+        "-pix_fmt", pix_fmt,
+        # "-vframes", '50', # 可以指定切前多少帧
+        "-color_primaries", color_primaries,
+        "-colorspace", colorspace,
+        "-color_trc", color_trc,
+        "-f", "rawvideo", yuv_path,
+    ]
+
+    print(f"Converting to {pix_fmt} → {yuv_path}")
+    subprocess.run(cmd_ffmpeg, check=True)
+    print("✅ Conversion finished!")

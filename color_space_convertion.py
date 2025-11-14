@@ -5,12 +5,7 @@ import numpy as np
 import cv2
 ##### 关于色彩转换函数的一些操作 #####
 
-"""
-输入一个HDR视频的YUV路径，转到Rec.2020色域的rgb值
-input: yuv_path, yuv的路径
-    yuv_type, 指定yuv的形式是yuv422还是420,
-output: n_frames×RGB(Rec.2020)
-"""
+
 def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_num=None):
     """
     读取 YUV 文件并返回所有帧的 RGB 值
@@ -19,23 +14,25 @@ def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
         yuv_path (str): YUV 文件路径
         width (int): 图像宽度
         height (int): 图像高度
-        yuv_type (str): 'yuv422' 或 'yuv420'
+        yuv_type (str): 'yuv422p10le' 或 'yuv420p'
         frame_num (int, optional): 要读取的帧数，如果为 None 则读取全部镇
 
     返回:
         np.ndarray: shape 为 (frame_num, height, width, 3)
     """
-    # 这里可以看到420p10le的每一帧的大小是分辨率的3(1.5×2)倍，422是4(2×2)倍
-    if yuv_type == 'yuv422p10le':
-        y_len = width * height
+    bytes_per_sample = 2 if "p10" in yuv_type else 1
+    dt = np.uint16 if "p10" in yuv_type else np.uint8
+
+    y_len = width * height
+
+    if '422' in yuv_type:
         uv_len = (width // 2) * height
-        frame_size_bytes = (y_len + 2 * uv_len) * 2
-    elif yuv_type == 'yuv420p10le':
-        y_len = width * height
+    elif '420' in yuv_type:
         uv_len = (width // 2) * (height // 2)
-        frame_size_bytes = (y_len + 2 * uv_len) * 2
     else:
         raise ValueError(f"Unsupported YUV type: {yuv_type}")
+
+    frame_size_bytes = (y_len + 2 * uv_len) * bytes_per_sample
 
     if frame_num is None:
         file_size = os.path.getsize(yuv_path)
@@ -51,15 +48,15 @@ def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
                 break
 
             # 解码为 uint16 数组
-            data = np.frombuffer(raw, dtype=np.uint16)
+            data = np.frombuffer(raw, dtype=dt)
 
             # 提取 YUV 分量
             y = data[:y_len].reshape((height, width))
 
-            if yuv_type == 'yuv422p10le':
+            if '422' in yuv_type:
                 u = data[y_len:y_len + uv_len].reshape((height, width // 2))
                 v = data[y_len + uv_len:].reshape((height, width // 2))
-            elif yuv_type == 'yuv420p10le':
+            elif '420' in yuv_type:
                 u = data[y_len:y_len + uv_len].reshape((height // 2, width // 2))
                 v = data[y_len + uv_len:].reshape((height // 2, width // 2))
 
@@ -72,14 +69,14 @@ def read_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
     return frames
 
 
-def yuv2rgb_bt2020(yuv, yuv_range='limited', color_space='bt2020'):
+def yuv2rgb(yuv, yuv_type='yuv420p10le', yuv_range='limited', color_space='bt2020'):
     """
     将 BT.2020 标准的 YUV 图像转换为 RGB 图像
     """
     yuv = yuv.astype(np.float64)
 
     # Y、Cb、Cr 通道归一化 (Limited Range)
-    ycbcr = yuv_norm(yuv, yuv_range=yuv_range)
+    ycbcr = yuv_norm(yuv, yuv_type=yuv_type, yuv_range=yuv_range)
     rgb = ycbcr2rgb(ycbcr, color_space=color_space)
 
     return rgb
@@ -87,6 +84,7 @@ def yuv2rgb_bt2020(yuv, yuv_range='limited', color_space='bt2020'):
 
 def ycbcr2rgb(ycbcr, color_space='bt2020'):
     y, cb, cr = cv2.split(ycbcr)
+
     if color_space == 'bt2020':
         # BT.2020 YUV 转 RGB 公式
         r = y + 1.4746 * cr
@@ -104,25 +102,42 @@ def ycbcr2rgb(ycbcr, color_space='bt2020'):
     return rgb
 
 
-def yuv_norm(yuv, yuv_range='limited'):
+def yuv_norm(yuv, yuv_type='yuv422p10le', yuv_range='limited'):
     y, u, v = cv2.split(yuv)
 
-    # yuv一般都是limited range的
-    if yuv_range == 'limited' or yuv_range == 'tv':
-        y = (y - 64) / (940 - 64)
-        cb = (u - 512) / (960 - 64)
-        cr = (v - 512) / (960 - 64)
-    elif yuv_range == 'full':
-        y = y / 1023
-        cb = (u - 512) / 1023
-        cr = (v - 512) / 1023
+    if 'p10' in yuv_type:
+        if yuv_range == 'limited' or yuv_range == 'tv':
+            offset = 512
+            y_low, y_upper = 64, 940
+            uv_low, uv_upper = 64, 960
+        elif yuv_range == 'full':
+            offset = 0
+            y_low = uv_low = 0
+            y_upper = uv_upper = 1023
+        else:
+            raise ValueError(f"Unsupported Range type: {yuv_range}")
     else:
-        raise ValueError(f"Unsupported Range type: {yuv_range}")
+
+        if yuv_range == 'limited' or yuv_range == 'tv':
+            offset = 128
+            y_low, y_upper = 16, 235
+            uv_low, uv_upper = 16, 240
+        elif yuv_range == 'full':
+            offset = 0
+            y_low = uv_low = 0
+            y_upper = uv_upper = 255
+        else:
+            raise ValueError(f"Unsupported Range type: {yuv_range}")
+
+    y = (y - y_low) / (y_upper - y_low)
+    cb = (u - offset) / (uv_upper - uv_low)
+    cr = (v - offset) / (uv_upper - uv_low)
 
     return cv2.merge([y, cb, cr])
 
 
-def load_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_num=None):
+def load_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160,
+             color_space='bt2020', frame_num=None):
     """
     :param yuv_path: yuv文件的路径
     :param yuv_type: yuv的类型，一般都是yuv420p10le，少数是yuv422p10le的类型
@@ -133,7 +148,8 @@ def load_yuv(yuv_path, yuv_type='yuv422p10le', width=3840, height=2160, frame_nu
     """
     yuv_list = read_yuv(yuv_path, yuv_type=yuv_type,
                         width=width, height=height, frame_num=frame_num)
-    rgb_list = [yuv2rgb_bt2020(yuv) for yuv in yuv_list]
+
+    rgb_list = [yuv2rgb(yuv, yuv_type=yuv_type, color_space=color_space) for yuv in yuv_list]
     return rgb_list
 
 

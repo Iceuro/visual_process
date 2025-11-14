@@ -106,9 +106,9 @@ def video2yuv(video_path, output_dir='convert_video_out'):
 
     infos = get_video_info(video_path)['streams'][0]
     pix_fmt = infos['pix_fmt']
-    color_primaries = infos.get('color_primaries', 'bt2020')
-    colorspace = infos.get('color_primaries', 'bt2020nc')
-    color_trc = infos.get('color_primaries', 'smpte2084')
+    # color_primaries = infos.get('color_primaries', 'bt2020')
+    # colorspace = infos.get('color_primaries', 'bt2020nc')
+    # color_trc = infos.get('color_primaries', 'smpte2084')
 
     base_name = os.path.splitext(os.path.basename(video_path))[0]
     yuv_path = os.path.join(output_dir, f"{base_name}.yuv")
@@ -116,10 +116,10 @@ def video2yuv(video_path, output_dir='convert_video_out'):
     cmd_ffmpeg = [
         "ffmpeg", "-i", video_path,
         "-pix_fmt", pix_fmt,
-        # "-vframes", '50', # 可以指定切前多少帧
-        "-color_primaries", color_primaries,
-        "-colorspace", colorspace,
-        "-color_trc", color_trc,
+        "-vframes", '50', # 可以指定切前多少帧
+        # "-color_primaries", color_primaries,
+        # "-colorspace", colorspace,
+        # "-color_trc", color_trc,
         "-f", "rawvideo", yuv_path,
     ]
 

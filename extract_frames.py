@@ -3,6 +3,8 @@ import subprocess
 import json
 import math
 
+import numpy as np
+
 
 def get_video_info(video_path):
     # cmd = ["ffmpeg", "-i", video_path]
@@ -21,6 +23,29 @@ def get_video_info(video_path):
     metadata = json.loads(result.stdout)
 
     return metadata
+
+
+def generate_segment_indices(total_frames, seg_num=3, frame_nums=10):
+    """
+
+    :param total_frames: 视频总共的帧数
+    :param seg_num: 切分的片段
+    :param frame_nums: 每个片段切分的帧数
+    :return:
+    """
+    segment_frame_nums = total_frames // seg_num
+
+    indices = []
+    half_range = frame_nums // 2
+
+    for i in range(seg_num):
+        start = i * segment_frame_nums
+        mid = start + segment_frame_nums // 2
+        start_f = mid - half_range
+        end_f = start_f + frame_nums
+        indices.extend(range(start_f, end_f))
+
+    return sorted(set(indices))
 
 
 def extract_frames(video_path, output_dir='',
@@ -56,41 +81,33 @@ def extract_frames(video_path, output_dir='',
             "-hwaccel", "cuda",
             "-i", video_path,
             "-vsync", "0",
-            os.path.join(output_dir, f"{video_name}_%06d.png")  # 保存所有帧
+            os.path.join(output_dir, f"{video_name}_%05d.png")  # 保存所有帧
         ]
     else:
         duration = eval(video_metas['streams'][0]['duration'])
         fps = eval(video_metas['streams'][0]['avg_frame_rate'])
 
         # ffprobe读取的帧数有时候不正确，通过duration * fps的方式计算得到的帧数更准确
-        total_frame_nums = int(duration * fps)
-        segment_frame_nums = total_frame_nums // seg_num
+        total_frames = int(fps * duration)
 
-        selected_frames = []
-        half_range = frame_nums / 2.0
+        selected_frames = generate_segment_indices(total_frames, seg_num=seg_num,
+                                                   frame_nums=frame_nums)
 
-        for i in range(seg_num):
-            start_idx = i * segment_frame_nums
-            mid = start_idx + segment_frame_nums // 2
+        # 构建 select 表达式
+        select_expr = "+".join([f"eq(n\\,{i})" for i in selected_frames])
 
-            # 连续帧范围
-            start_f = math.floor(mid - half_range)
-            end_f = start_f + frame_nums
-            selected_frames.extend(list(range(start_f, end_f)))
-
-            # 5️⃣ 构建 select 表达式（一次性提取）
-            select_expr = "+".join([f"eq(n\\,{f})" for f in selected_frames])
+        output_pattern = os.path.join(output_dir, f"{video_name}_%05d.png")
 
         cmd = [
             "ffmpeg",
-            # "-y", "-hwaccel", "cuda",
             "-i", video_path,
-            "-vf", f"select='{select_expr}',setpts=N/FRAME_RATE/TB",
+            "-vf", f"select='{select_expr}'",
             "-vsync", "0",
-            os.path.join(output_dir, f"{video_name}_%04d.png")
+            "-frame_pts", "1",
+            output_pattern
         ]
 
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def video2yuv(video_path, output_dir='convert_video_out'):
